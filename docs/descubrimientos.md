@@ -143,3 +143,16 @@
   que NOMAD los indexe.
 - Cómo aplicarlo en el futuro: verificar `ls -ld` antes de una descarga
   directa; si no, usar `sudo curl` o la API `/api/zim/download-remote`.
+
+## 2026-11-25 — `POST /api/rag/files/embed` responde 202, no 200
+
+- Contexto: al encolar la indexación de los ZIM con `force:true`, un script
+  trató solo 200/201 como éxito e interpretó el código 202 como error.
+- Descubrimiento: la respuesta real es `HTTP 202` con
+  `{"message":"Re-embed queued for this file."}`. Eso significa que el trabajo
+  **sí** quedó encolado. Los 17 ZIM se encolaron de golpe y la cola los procesa
+  de 2 en 2 (estados `waiting`/`processing` en `GET /api/rag/active-jobs`).
+- Cómo aplicarlo en el futuro: aceptar 200, 201 **y 202** como éxito. Para
+  indexar en secuencia, esperar a que no queden jobs `waiting`/`processing`
+  del archivo antes de encolar el siguiente; si un job queda `failed`, el
+  archivo sigue en `pending_decision` y se puede reencolar con `force:true`.
