@@ -6,11 +6,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NOMAD_DIR="${NOMAD_DIR:-/opt/project-nomad}"
 HOST_PORT="${HOST_PORT:-8090}"          # 8080 is taken by llama.cpp on this host
-LLAMA_PORT="${LLAMA_PORT:-11435}"       # llama.cpp server to use (Qwen3-4B)
+LLAMA_PORT="${LLAMA_PORT:-18020}"       # llama.cpp chat server (Qwen3-1.7B: fits 8 GB RAM)
 EMBED_PORT="${EMBED_PORT:-11436}"       # llama.cpp server with --embeddings
 PROXY_PORT="${PROXY_PORT:-11437}"       # nginx: /v1/embeddings -> EMBED_PORT, rest -> LLAMA_PORT
 BRIDGE_PORTS="${BRIDGE_PORTS:-8080 11435 11437 18020}"
-MODEL_NAME="${MODEL_NAME:-/home/botxtrem/models/Qwen3-4B-Q4_K_M.gguf}"
+MODEL_NAME="${MODEL_NAME:-/home/botxtrem/models/Qwen3-1.7B-Q4_K_M.gguf}"
+# With more RAM, Qwen3-4B-Q4_K_M.gguf on port 11435 also works (slower).
 EMBED_MODEL="${EMBED_MODEL:-/home/botxtrem/models/nomic-embed-text-v1.5.Q5_K_M.gguf}"
 EMBED_MODEL_NAME="${EMBED_MODEL_NAME:-nomic-embed-text:v1.5}" # NOMAD hardcodes this name for RAG
 BASE_URL="http://127.0.0.1:${HOST_PORT}"

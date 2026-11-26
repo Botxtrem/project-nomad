@@ -119,3 +119,27 @@
 - Cómo aplicarlo en el futuro: para activarlo por consola,
   `localStorage.setItem('nomad:theme','dark')` y recargar. Para persistir entre
   dispositivos haría falta parchear el frontend para leer `ui.theme` al arrancar.
+
+## 2026-11-25 — Con 8 GB de RAM conviene el modelo de 1,7B, no el de 4B
+
+- Contexto: Qwen3-4B-Q4_K_M.gguf en 11435 consume ~2,7 GB de RAM; con NOMAD,
+  Qdrant, MySQL, Redis y el navegador el sistema tenía 5,9/7,5 GB usados y solo
+  1,6 GB disponibles. Las respuestas de la UI tardaban 37–165 s.
+- Descubrimiento: el servidor de 18020 ya tenía Qwen3-1.7B-Q4_K_M.gguf cargado
+  (RSS ~7 MB en reposo). Al detener el de 4B y enrutar el proxy 11437 a 18020,
+  la memoria disponible subió a ~3,9 GB y una respuesta simple bajó a ~20 s.
+- Cómo aplicarlo en el futuro: en equipos de 8 GB usar el modelo de 1,7B para
+  chat; el modelo de embeddings (95 MB) y Qdrant son los que aportan el
+  conocimiento vía RAG, así que reducir el chat no pierde calidad factual.
+
+## 2026-11-25 — `/opt/project-nomad/storage/zim` puede quedar en root:root
+
+- Contexto: al descargar ZIMs con `curl -o` desde el usuario salía
+  `Permiso denegado` aunque el directorio se había creado antes.
+- Descubrimiento: el directorio estaba `root:root 755` (probablemente por el
+  `sudo cp` del ZIM mini y/o el entrypoint del contenedor). Basta con
+  `sudo chown botxtrem:botxtrem /opt/project-nomad/storage/zim` para poder
+  escribir como usuario normal; los archivos deben quedar legibles (644) para
+  que NOMAD los indexe.
+- Cómo aplicarlo en el futuro: verificar `ls -ld` antes de una descarga
+  directa; si no, usar `sudo curl` o la API `/api/zim/download-remote`.

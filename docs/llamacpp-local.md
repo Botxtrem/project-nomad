@@ -15,7 +15,7 @@ Ollama. Todo se hizo con el repo `Crosstalk-Solutions/project-nomad` clonado en
 | Logs de contenedores | <http://localhost:9999> (Dozzle) |
 | Compose | `/opt/project-nomad/compose.yml` |
 | Backend IA configurado | `http://host.docker.internal:11437` (proxy nginx: chat + embeddings) |
-| Modelo por defecto (`chat.lastModel`) | `/home/botxtrem/models/Qwen3-4B-Q4_K_M.gguf` |
+| Modelo por defecto (`chat.lastModel`) | `/home/botxtrem/models/Qwen3-1.7B-Q4_K_M.gguf` (1,7B: cabe en 8 GB de RAM) |
 | RAG | activado (`rag.enabled=true`) con Qdrant + `nomic-embed-text:v1.5` |
 | Tema | oscuro (`ui.theme=dark` + `localStorage nomad:theme=dark`) |
 
@@ -32,15 +32,16 @@ mapeando el puerto host `8090 -> 8080` del contenedor `admin`.
 | Puerto | Modelo |
 |---|---|
 | 8080 | `/home/botxtrem/models/Bonsai-8B-Q1_0.gguf` |
-| 11435 | `/home/botxtrem/models/Qwen3-4B-Q4_K_M.gguf` (el usado por NOMAD) |
-| 18020 | `/home/botxtrem/models/Qwen3-1.7B-Q4_K_M.gguf` |
+| 11435 | `/home/botxtrem/models/Qwen3-4B-Q4_K_M.gguf` (detenido: consumía 2,7 GB de RAM) |
+| 18020 | `/home/botxtrem/models/Qwen3-1.7B-Q4_K_M.gguf` (el usado por NOMAD) |
 | 11436 | `/home/botxtrem/models/nomic-embed-text-v1.5.Q5_K_M.gguf` (`--embeddings`) |
-| 11437 | nginx, une chat (11435) + embeddings (11436) en una sola URL |
+| 11437 | nginx, une chat (18020) + embeddings (11436) en una sola URL |
 
 Todos escuchan solo en `127.0.0.1`, por lo que los contenedores no pueden
 conectarse directamente. Se creó un puente `socat` que expone 8080, 11435,
 11437 y 18020 solo en la IP del gateway de Docker (`172.17.0.1`), no en toda
-la LAN:
+la LAN. El proxy 11437 envía el chat al puerto 18020 (modelo de 1,7B); el
+servidor de 4B en 11435 se dejó detenido para ahorrar RAM:
 
 - Script: `/usr/local/bin/nomad-llama-bridge.sh`
 - Servicio: `/etc/systemd/system/nomad-llama-bridge.service` (`enabled`, `Restart=always`)
@@ -63,7 +64,7 @@ necesita embeddings y el chat necesita generación. Se puso nginx en
 - `/v1/models` → JSON estático con el modelo de chat y `nomic-embed-text:v1.5`.
   Sin esto, `RagService` no encuentra el modelo de embeddings e intenta
   "descargarlo" (imposible en llama.cpp).
-- Todo lo demás (`/v1/chat/completions`, etc.) → `127.0.0.1:11435` (Qwen3-4B).
+- Todo lo demás (`/v1/chat/completions`, etc.) → `127.0.0.1:18020` (Qwen3-1.7B).
 - `/api/tags` sigue devolviendo 404 para que NOMAD detecte el backend como
   "no Ollama nativo" y use directamente la API OpenAI-compatible.
 
@@ -81,7 +82,7 @@ curl -s -X PATCH "$BASE/api/system/settings" -H 'Content-Type: application/json'
   -d '{"key":"ai.remoteOllamaUrl","value":"http://host.docker.internal:11437"}'
 
 curl -s -X PATCH "$BASE/api/system/settings" -H 'Content-Type: application/json' \
-  -d '{"key":"chat.lastModel","value":"/home/botxtrem/models/Qwen3-4B-Q4_K_M.gguf"}'
+  -d '{"key":"chat.lastModel","value":"/home/botxtrem/models/Qwen3-1.7B-Q4_K_M.gguf"}'
 
 curl -s -X PATCH "$BASE/api/system/settings" -H 'Content-Type: application/json' \
   -d '{"key":"rag.enabled","value":"true"}'
@@ -130,7 +131,7 @@ En la UI:
 3. Subir archivos (PDF/TXT/MD) desde el panel de Knowledge Base; NOMAD los
    divide en chunks, llama a `/v1/embeddings` y guarda los vectores en Qdrant.
 4. Hacer preguntas: el pipeline recupera los fragmentos relevantes y se los
-   pasa a Qwen3-4B como contexto. La respuesta incluye las fuentes citadas.
+   pasa a Qwen3-1.7B como contexto. La respuesta incluye las fuentes citadas.
 
 Por API:
 
@@ -146,6 +147,28 @@ Prueba real hecha en esta máquina: se subió un TXT con el dato
 `TORONJA-741` y se preguntó por él. El modelo respondió `TORONJA-741` y
 devolvió en `sources` el nombre del archivo subido, confirmando que el
 contexto recuperado llegó al modelo.
+
+### Contenido offline descargado
+
+NOMAD no hornea contenido pesado en la imagen: trae la app, datos curados
+pequeños y sus docs; los ZIM, modelos y datasets grandes se bajan aparte.
+Ya descargados en `/opt/project-nomad/storage/zim/`:
+
+- `wikipedia_en_100_mini_2026-01.zim` (incluido en el repo, 4 MB) —
+  **indexado**: 1.231 chunks en Qdrant.
+- Esenciales de Medicina (Medical Library, NHS Medicines, Military Medicine,
+  CDC), MedlinePlus, Cocina, Computación, Herramientas/Mecánica y
+  supervivencia ligera (agua, nudos, comida).
+
+El catálogo completo está en `collections/kiwix-categories.json`; los tiers
+grandes (TED, Wikibooks, libros de texto, videos) se pueden bajar después con
+`POST /api/zim/download-remote`. Para indexar un ZIM ya presente:
+
+```bash
+curl -s -X POST http://127.0.0.1:8090/api/rag/files/embed \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"/app/storage/zim/<archivo>.zim","force":true}'
+```
 
 ## Modo oscuro
 
@@ -165,7 +188,7 @@ curl -s http://127.0.0.1:8090/api/ollama/installed-models
 
 curl -s -X POST http://127.0.0.1:8090/api/ollama/chat \
   -H 'Content-Type: application/json' \
-  -d '{"model":"/home/botxtrem/models/Qwen3-4B-Q4_K_M.gguf","messages":[{"role":"user","content":"Responde solo: OK"}],"stream":false,"think":false}'
+  -d '{"model":"/home/botxtrem/models/Qwen3-1.7B-Q4_K_M.gguf","messages":[{"role":"user","content":"Responde solo: OK"}],"stream":false,"think":false}'
 ```
 
 ## Comandos útiles
@@ -188,8 +211,11 @@ docker compose -p project-nomad -f /opt/project-nomad/compose.yml logs -f admin
 - El puerto 8080 de NOMAD se movió al 8090; las URLs guardadas en la UI y en el
   compose usan `http://localhost:8090`.
 - Qwen3-4B razona antes de responder: el streaming emite muchos chunks vacíos y
-  la primera respuesta de la UI puede tardar ~45 s. No es un error; el flag
-  `think:false` solo quita el texto de razonamiento, no acelera el modelo.
+  la primera respuesta de la UI puede tardar ~45 s. Con el modelo de 1,7B actual
+  la respuesta tarda ~20 s. `think:false` solo quita el texto de razonamiento,
+  no acelera el modelo.
+- Con 8 GB de RAM conviene el modelo de 1,7B: el de 4B ocupaba ~2,7 GB y dejaba
+  solo ~1,6 GB libres para NOMAD/Qdrant. Al detenerlo quedaron ~3,9 GB libres.
 
 ## Reinstalación automatizada
 
