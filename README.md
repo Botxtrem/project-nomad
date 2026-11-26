@@ -104,6 +104,18 @@ Note that if you use Ollama on a different host, you must start the server with 
 Ollama is the preferred way to use the AI assistant, as it has features such as model download that OpenAI API does not support. So when using LM Studio, for example, you will have to use LM Studio to download models.
 You are responsible for the setup of Ollama/OpenAI server on the other host.
 
+#### Local setup in this environment (BotXtrem)
+This checkout is running on a Debian-based host that already has `llama.cpp`
+servers bound to `127.0.0.1`, so port 8080 is unavailable and Ollama is not used.
+The UI runs at <http://localhost:8090> and the AI backend points to
+`http://host.docker.internal:11435` (Qwen3-4B) through a `socat` bridge on the
+Docker gateway. Full details, verification commands and limitations are in
+[`docs/llamacpp-local.md`](docs/llamacpp-local.md). To reproduce the setup:
+
+```bash
+sudo bash install/setup_llamacpp_local.sh
+```
+
 ## Frequently Asked Questions (FAQ)
 For answers to common questions about Project NOMAD, please see our [FAQ](FAQ.md) page.
 
