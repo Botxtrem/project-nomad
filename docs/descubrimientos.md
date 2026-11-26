@@ -83,3 +83,39 @@
   `content: "H"` y `content: "OLA"` al terminar.
 - Cómo aplicarlo en el futuro: esperar antes de dar el chat por fallido; para
   pruebas rápidas usar `stream:false`.
+
+## 2026-11-25 — RAG funciona con llama.cpp si se separa embeddings y se une con un proxy
+
+- Contexto: NOMAD solo acepta una `ai.remoteOllamaUrl`, pero `RagService` llama
+  a `/v1/embeddings` y el chat a `/v1/chat/completions`; los `llama-server`
+  iniciales no tenían `--embeddings`.
+- Descubrimiento: se levantó un segundo `llama-server` con
+  `nomic-embed-text-v1.5.Q5_K_M.gguf` (768 dims) en 11436 y nginx en 11437
+  enrutando por endpoint. Además, `RagService` busca el modelo
+  `nomic-embed-text:v1.5` en `getModels(true)`; como llama.cpp solo lista su
+  GGUF, hay que devolver un `/v1/models` estático con ese nombre o intenta
+  descargarlo y falla. Qdrant se instala con
+  `POST /api/system/services/install {"service_name":"nomad_qdrant"}`.
+- Comandos relevantes:
+  ```bash
+  curl -s http://127.0.0.1:8090/api/rag/health     # {"online":true}
+  curl -s -X POST http://127.0.0.1:8090/api/rag/upload -F 'file=@/tmp/mi_doc.txt'
+  curl -s http://127.0.0.1:8090/api/rag/files      # state: indexed
+  ```
+- Cómo aplicarlo en el futuro: mantener `nomad-llama-embeddings.service` y el
+  proxy nginx; con `rag.enabled=true` el chat recovery fragmentos y devuelve
+  `sources`. Prueba real: al subir un TXT con `TORONJA-741` y preguntar por él,
+  el modelo respondió el código correcto citando el archivo.
+
+## 2026-11-25 — El tema oscuro se guarda en localStorage, no se lee del KV
+
+- Contexto: se fijó `ui.theme=dark` en el KV de MySQL y se preguntó si podía
+  ponerse oscura la interfaz.
+- Descubrimiento: `admin/inertia/hooks/useTheme.ts` inicializa desde
+  `localStorage['nomad:theme']` (por defecto `light`) y solo **escribe** el KV
+  `ui.theme` de forma fire-and-forget. El botón se llama `Night Ops` /
+  `Day Ops` (`ThemeToggle.tsx`). Por eso en un navegador nuevo hay que pulsar
+  el botón una vez; el KV no basta.
+- Cómo aplicarlo en el futuro: para activarlo por consola,
+  `localStorage.setItem('nomad:theme','dark')` y recargar. Para persistir entre
+  dispositivos haría falta parchear el frontend para leer `ui.theme` al arrancar.
