@@ -75,6 +75,19 @@ Cuando hay un valor personalizado, NOMAD usa `OpenAI({ baseURL: <url>/v1 })`;
 si no, intenta usar el contenedor Ollama. El backend se memoiza al iniciar, por
 eso hay que hacer `docker restart nomad_admin` tras cambiar la URL.
 
+La página `/chat` además comprueba que el servicio `nomad_ollama` esté marcado
+como instalado en la tabla `services` de MySQL. Como no hay contenedor Ollama,
+se marcó a mano (NOMAD no lo revierte mientras exista `ai.remoteOllamaUrl`):
+
+```bash
+DB_PASS=$(grep '^ *- DB_PASSWORD=' /opt/project-nomad/compose.yml | head -1 | cut -d= -f2)
+docker exec nomad_mysql mysql -unomad_user -p"$DB_PASS" nomad \
+  -e "UPDATE services SET installed=1, installation_status='idle' WHERE service_name='nomad_ollama';"
+```
+
+Sin ese paso la UI responde `{"error":"AI Assistant service not installed"}`,
+aunque la API `/api/ollama/chat` funcione.
+
 Cambiar de modelo: basta con apuntar `ai.remoteOllamaUrl` a otro puenteado
 (`8080` o `18020`) y actualizar `chat.lastModel` con el nombre que devuelva
 `/v1/models`, seguido de `docker restart nomad_admin`.
@@ -111,6 +124,9 @@ docker compose -p project-nomad -f /opt/project-nomad/compose.yml logs -f admin
   configurar el backend accordingly.
 - El puerto 8080 de NOMAD se movió al 8090; las URLs guardadas en la UI y en el
   compose usan `http://localhost:8090`.
+- Qwen3-4B razona antes de responder: el streaming emite muchos chunks vacíos y
+  la primera respuesta de la UI puede tardar ~45 s. No es un error; el flag
+  `think:false` solo quita el texto de razonamiento, no acelera el modelo.
 
 ## Reinstalación automatizada
 

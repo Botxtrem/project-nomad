@@ -54,3 +54,32 @@
 - Cómo aplicarlo en el futuro: cargar modelos con `llama-server` en el host y
   dejar la descarga/contexto fuera de NOMAD; para RAG hace falta un servidor de
   embeddings separado.
+
+## 2026-11-25 — La UI /chat exige el servicio nomad_ollama "instalado"
+
+- Contexto: con `ai.remoteOllamaUrl` apuntando a llama.cpp, el endpoint
+  `/api/ollama/chat` respondía bien pero `http://localhost:8090/chat` devolvía
+  `{"error":"AI Assistant service not installed"}`.
+- Descubrimiento: `ChatsController.inertia()` usa
+  `SystemService.checkServiceInstalled(SERVICE_NAMES.OLLAMA)`, que consulta la
+  columna `installed` de la tabla `services` (fila `nomad_ollama`). Sin contenedor
+  Ollama local hay que marcarla a mano. `_syncContainersWithDatabase()` no la
+  revierte si existe `ai.remoteOllamaUrl`.
+- Comandos relevantes:
+  ```bash
+  docker exec nomad_mysql mysql -unomad_user -p"$DB_PASS" nomad \
+    -e "UPDATE services SET installed=1, installation_status='idle' WHERE service_name='nomad_ollama';"
+  ```
+- Cómo aplicarlo en el futuro: al configurar un backend remoto, fijar primero la
+  URL y después marcar el servicio instalado; reiniciar la pestaña del navegador.
+
+## 2026-11-25 — Streaming con Qwen3-4B parece colgado pero solo está razonando
+
+- Contexto: en la UI el chat mostraba "Thinking" y el request
+  `POST /api/ollama/chat` quedaba `pending` durante ~45 s.
+- Descubrimiento: llama.cpp emite chunks vacíos mientras el modelo razona; el
+  contenido llega al final. `think:false` suprime el texto de razonamiento, no
+  el tiempo de cómputo. Con `curl -N` y filtrando líneas vacías se ve
+  `content: "H"` y `content: "OLA"` al terminar.
+- Cómo aplicarlo en el futuro: esperar antes de dar el chat por fallido; para
+  pruebas rápidas usar `stream:false`.

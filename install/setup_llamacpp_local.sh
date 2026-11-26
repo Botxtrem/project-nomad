@@ -90,6 +90,15 @@ set_setting ai.remoteOllamaUrl "http://host.docker.internal:${LLAMA_PORT}"
 set_setting chat.lastModel "${MODEL_NAME}"
 set_setting rag.enabled "false"
 
+# The chat UI checks the `nomad_ollama` row in the services table, not the
+# remote endpoint. With a remote backend there is no local container, so the
+# flag has to be set manually; NOMAD keeps it because ai.remoteOllamaUrl is set.
+echo "==> Marking AI Assistant (nomad_ollama) as installed"
+DB_PASS="$(grep '^ *- DB_PASSWORD=' "${NOMAD_DIR}/compose.yml" | head -1 | cut -d= -f2)"
+docker exec nomad_mysql mysql -unomad_user -p"${DB_PASS}" nomad \
+  -e "UPDATE services SET installed=1, installation_status='idle' WHERE service_name='nomad_ollama';" \
+  >/dev/null 2>&1
+
 # OllamaService memoizes the backend at boot; restart so the URL takes effect.
 docker restart nomad_admin >/dev/null
 for _ in $(seq 1 60); do
